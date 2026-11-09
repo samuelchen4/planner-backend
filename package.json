@@ -8,7 +8,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "tsx watch --env-file-if-exists=.env src/server.ts",
     "build": "tsup src/server.ts --format esm --target node22 --clean",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",

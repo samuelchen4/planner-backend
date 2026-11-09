@@ -1,0 +1,13 @@
+# PowerSync sync rules: which rows stream down to which device.
+# Every signed-in user gets one bucket holding all of their own rows. `request.user_id()` is the
+# `sub` of the Supabase access token the app connects with (PowerSync checks it against the
+# project's JWKS). The tables come from the `powersync` publication (see supabase/migrations).
+#
+# Paste this into the PowerSync dashboard (or `powersync deploy`) for each instance (dev, prod).
+bucket_definitions:
+  user_data:
+    parameters: SELECT request.user_id() AS user_id
+    data:
+      - SELECT * FROM tasks WHERE user_id = bucket.user_id
+      - SELECT * FROM habit_days WHERE user_id = bucket.user_id
+      - SELECT * FROM external_events WHERE user_id = bucket.user_id
