@@ -1,0 +1,6 @@
+name: planner-backend
+description: planner-backend on Google Cloud (Cloud Run, Artifact Registry, Secret Manager)
+runtime:
+  name: nodejs
+  options:
+    packagemanager: pnpm
