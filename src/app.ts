@@ -6,7 +6,6 @@ import { logger } from 'hono/logger';
 import { db } from './db/client';
 import { syncRoutes } from './routes/sync';
 
-/** The HTTP API (also used by the tests, without starting a server). */
 export const app = new Hono()
   .use(logger())
   .get('/health', async (c) => {

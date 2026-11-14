@@ -7,7 +7,8 @@ The client repo's `CLAUDE.md` has the product and architecture context.
 ## Working agreement (from Samuel, 2026-11-09)
 - **Work autonomously.** Run any commands and make any changes needed. Never prompt or ask questions until Samuel says stop. Pick sensible defaults and record them in README.md / this file.
 - Only things that truly need him are exceptions: account sign-ups, secrets, Apple/Google console setup.
-- Git: commit in logical steps with clear messages and no attribution or co-author lines. Commit email is already set (personal noreply). Push with `git push` (remote `origin` = `git@github-personal:samuelchen4/planner-backend.git`, personal SSH key).
+- Git (updated 2026-11-13): **don't commit or push.** Samuel reviews, commits and pushes himself; leave changes in the working tree. (If he asks for a commit: clear message, no attribution or co-author lines; remote `origin` = `git@github-personal:samuelchen4/planner-backend.git`.)
+- **No comments** in any file (code, config, SQL, Dockerfile) unless Samuel asks for one. Explanations go in README.md / this file. Functional directives stay: `--> statement-breakpoint`, `# syntax=docker/dockerfile:1`.
 - **Never use the `gh` CLI here:** it's logged into Samuel's work account.
 
 ## Stack
@@ -40,6 +41,8 @@ docker build -t planner-backend .
 ```
 
 ## Gotchas
+- PowerSync uses the Sync Streams format (`config: edition: 3`, `streams:`, `auth.user_id()`), not the older `bucket_definitions`. `powersync/sync-rules.yaml` is the source of truth; paste it into the dashboard for each instance.
+- Supabase CLI v3 targets the local stack by default: cloud commands need `--remote` (e.g. `pnpm exec supabase db push --remote`). Linked dev project: `planner-dev` (ref `dfdwcpcwdxpuikjtmxci`). Load `.env` first (`set -a; source .env; set +a`) so `SUPABASE_DB_PASSWORD` is set.
 - Tests need `pnpm db:start` running; `test/setup-env.ts` reads URLs and keys from `supabase status`.
 - Local Supabase (CLI v3) signs access tokens with ES256, checked via its JWKS like cloud projects. `SUPABASE_JWT_SECRET` only matters for legacy HS256 tokens.
 - `asUser` switches to role `authenticated` inside the transaction: queries there see only the user's rows. The plain `db` client bypasses RLS (as `postgres`), so use it only for server-side work.

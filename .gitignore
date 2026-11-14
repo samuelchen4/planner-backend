@@ -9,5 +9,4 @@ infra/bin
 *.log
 .DS_Store
 
-# Claude Code (machine-local)
 .claude/settings.local.json

@@ -4,7 +4,6 @@ import postgres from 'postgres';
 import { env } from '../env';
 import * as schema from './schema';
 
-/** One connection pool for the process. */
 export const client = postgres(env.DATABASE_URL, { max: 10 });
 
 export const db = drizzle(client, { schema });

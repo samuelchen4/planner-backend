@@ -12,7 +12,6 @@ export interface TestUser {
   token: string;
 }
 
-/** A new confirmed user in the local Supabase Auth, signed in (a real access token). */
 export async function createUser(): Promise<TestUser> {
   const email = `test-${randomUUID()}@example.com`;
   const password = 'password-123456';
@@ -35,7 +34,6 @@ export async function createUser(): Promise<TestUser> {
   return { id: session.user.id, token: session.access_token };
 }
 
-/** POST /sync/upload as `user` (or with no token). */
 export async function upload(user: TestUser | null, batch: Change[]) {
   const res = await app.request('/sync/upload', {
     method: 'POST',
@@ -48,7 +46,6 @@ export async function upload(user: TestUser | null, batch: Change[]) {
   return { status: res.status, body: (await res.json()) as Record<string, unknown> };
 }
 
-/** A full task row as the app would send it in a PUT (no id / user_id: those are separate). */
 export function taskData(fields: Record<string, unknown> = {}) {
   const now = new Date().toISOString();
   return {
@@ -72,7 +69,6 @@ export function taskData(fields: Record<string, unknown> = {}) {
   };
 }
 
-/** Query the local Supabase's REST API (PostgREST) as `user`: RLS decides what they see. */
 export function rest(user: TestUser, path: string, init: RequestInit = {}) {
   return fetch(`${api()}/rest/v1/${path}`, {
     ...init,

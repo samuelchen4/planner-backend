@@ -4,17 +4,13 @@ import { createRemoteJWKSet, decodeProtectedHeader, jwtVerify, type JWTPayload }
 
 import { env } from './env';
 
-/** What a route knows about the caller. */
 export interface AuthVariables {
   userId: string;
 }
 
-// Supabase signs access tokens with the project's signing keys (published as JWKS); older
-// projects use one shared HS256 secret. Both are accepted, depending on the token's `alg`.
 const jwks = createRemoteJWKSet(new URL('/auth/v1/.well-known/jwks.json', env.SUPABASE_URL));
 const secret = env.SUPABASE_JWT_SECRET && new TextEncoder().encode(env.SUPABASE_JWT_SECRET);
 
-/** Checks a Supabase access token and returns its claims; throws if it isn't valid. */
 export async function verifyToken(token: string): Promise<JWTPayload> {
   const { alg } = decodeProtectedHeader(token);
   const options = { audience: 'authenticated' };
@@ -25,7 +21,6 @@ export async function verifyToken(token: string): Promise<JWTPayload> {
   return (await jwtVerify(token, jwks, options)).payload;
 }
 
-/** Requires `Authorization: Bearer <Supabase access token>`; sets `userId` (the token's `sub`). */
 export const requireUser = createMiddleware<{ Variables: AuthVariables }>(async (c, next) => {
   const token = c.req.header('Authorization')?.match(/^Bearer (.+)$/)?.[1];
   if (!token) throw new HTTPException(401, { message: 'Sign-in required' });

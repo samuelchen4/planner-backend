@@ -2,9 +2,6 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import { createUser, newId, rest, taskData, upload, type TestUser } from './helpers';
 
-// Row Level Security, checked straight against Postgres (through PostgREST with each user's own
-// token), independent of the API's checks: user A can't see or change user B's rows.
-
 let alice: TestUser;
 let bob: TestUser;
 let bobsTask: string;

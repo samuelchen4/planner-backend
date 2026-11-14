@@ -1,7 +1,4 @@
-# Copy to Pulumi.dev.yaml (or run the `pulumi config set` commands in infra/README.md).
 config:
   gcp:project: planner-dev-XXXXXX
   gcp:region: us-central1
   planner-backend:supabaseUrl: https://XXXXXXXX.supabase.co
-  # Image to deploy; CI sets this to the commit's tag. Leave unset for a placeholder image.
-  # planner-backend:imageTag: abc1234

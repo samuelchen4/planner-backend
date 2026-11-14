@@ -36,8 +36,6 @@ jobs:
         working-directory: infra
         run: pnpm install --frozen-lockfile && pnpm typecheck
 
-      # Local Supabase (Postgres + Auth) in Docker, with the migrations applied. Services the tests
-      # don't use are skipped to start faster.
       - name: Start Supabase
         run: >-
           pnpm exec supabase start

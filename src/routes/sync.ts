@@ -9,24 +9,14 @@ import { asUser } from '../db/as-user';
 import type { Tx } from '../db/client';
 import { habitDays, tasks } from '../db/schema';
 
-// POST /sync/upload: the app's PowerSync connector sends its queued local changes here.
-//
-// Each change is checked and applied as the signed-in user (RLS applies too), all in one
-// transaction. A change that can never succeed (bad data, someone else's row, a table the app
-// can't write) is skipped and reported, not retried: an error would make the app resend the batch
-// forever and block its queue. Only failures that might succeed later (database down) return 5xx.
-
-/** Tables the app may write, by PowerSync table name. external_events is server-only. */
 const WRITABLE = { tasks, habit_days: habitDays } as const;
 type WritableName = keyof typeof WRITABLE;
 
-/** For each writable table: the columns that hold another of the user's rows. */
 const OWNED_REFERENCES: Record<WritableName, string[]> = {
   tasks: ['list_id'],
   habit_days: ['habit_id'],
 };
 
-/** Row shape checks, from the models (types, enums, required columns). */
 const rowSchemas = {
   tasks: createInsertSchema(tasks).omit({ id: true, user_id: true }),
   habit_days: createInsertSchema(habitDays).omit({ id: true, user_id: true }),
@@ -49,20 +39,15 @@ export interface Rejection {
   reason: string;
 }
 
-/** A change the database can never accept (as opposed to a temporary failure). */
 class Rejected extends Error {}
 
-/** Postgres error classes that mean "this data is wrong", not "try again later". */
 function isPermanentDbError(e: unknown): boolean {
   const code =
     (e as { code?: string; cause?: { code?: string } })?.cause?.code ??
     (e as { code?: string })?.code;
   return (
     typeof code === 'string' &&
-    (code.startsWith('22') || // data exception (bad value, bad date…)
-      code.startsWith('23') || // integrity (foreign key, check, unique, not null)
-      code === '42501' || // insufficient privilege: Row Level Security said no
-      code === '42703') // undefined column
+    (code.startsWith('22') || code.startsWith('23') || code === '42501' || code === '42703')
   );
 }
 
@@ -73,7 +58,6 @@ async function applyChange(tx: Tx, userId: string, change: Change) {
   const idColumn = getTableColumns(table).id;
 
   if (change.op === 'DELETE') {
-    // RLS limits this to the user's own rows; deleting a row that's already gone is fine.
     await tx.delete(table).where(eq(idColumn, change.id));
     return;
   }
@@ -96,7 +80,6 @@ async function applyChange(tx: Tx, userId: string, change: Change) {
     );
   }
 
-  // References must point at the user's own rows (a foreign key alone would accept anyone's).
   for (const column of OWNED_REFERENCES[name]) {
     const ref = (parsed.data as Record<string, unknown>)[column];
     if (typeof ref !== 'string') continue;
@@ -111,7 +94,6 @@ async function applyChange(tx: Tx, userId: string, change: Change) {
       .values(row as typeof tasks.$inferInsert)
       .onConflictDoUpdate({ target: idColumn, set: row as Partial<typeof tasks.$inferInsert> });
   } else if (Object.keys(parsed.data).length) {
-    // PATCH: RLS limits this to the user's own rows (another user's id updates nothing).
     await tx
       .update(table)
       .set(parsed.data as Partial<typeof tasks.$inferInsert>)
@@ -119,13 +101,11 @@ async function applyChange(tx: Tx, userId: string, change: Change) {
   }
 }
 
-/** Apply a batch for `userId`: returns the skipped changes. Throws on temporary failures. */
 export async function applyBatch(userId: string, batch: Change[]): Promise<Rejection[]> {
   const rejected: Rejection[] = [];
   await asUser(userId, async (tx) => {
     for (const [index, change] of batch.entries()) {
       try {
-        // A savepoint per change: a rejected one is undone without losing the others.
         await tx.transaction((sp) => applyChange(sp, userId, change));
       } catch (e) {
         if (!(e instanceof Rejected) && !isPermanentDbError(e)) throw e;

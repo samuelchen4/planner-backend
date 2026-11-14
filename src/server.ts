@@ -8,8 +8,6 @@ const server = serve({ fetch: app.fetch, port: env.PORT }, (info) => {
   console.log(`planner-backend listening on http://localhost:${info.port}`);
 });
 
-// Cloud Run sends SIGTERM before stopping an instance: finish in-flight requests, then close the
-// database pool.
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   process.once(signal, () => {
     server.close(async () => {
