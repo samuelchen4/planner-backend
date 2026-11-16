@@ -1,0 +1,4 @@
+config:
+  gcp:project: planner-514904
+  gcp:region: us-east4
+  planner-backend:supabaseUrl: https://dfdwcpcwdxpuikjtmxci.supabase.co

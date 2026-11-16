@@ -4,3 +4,5 @@ runtime:
   name: nodejs
   options:
     packagemanager: pnpm
+backend:
+  url: https://api.pulumi.com
