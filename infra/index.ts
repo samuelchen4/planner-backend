@@ -9,6 +9,7 @@ const stack = pulumi.getStack();
 
 const supabaseUrl = config.require('supabaseUrl');
 const imageTag = config.get('imageTag');
+const secretVersion = config.get('secretVersion') ?? 'latest';
 
 const name = (suffix: string) => `planner-${suffix}-${stack}`;
 
@@ -94,7 +95,7 @@ const service = new gcp.cloudrunv2.Service(
             { name: 'SUPABASE_URL', value: supabaseUrl },
             ...Object.entries(secrets).map(([envName, secret]) => ({
               name: envName,
-              valueSource: { secretKeyRef: { secret: secret.secretId, version: 'latest' } },
+              valueSource: { secretKeyRef: { secret: secret.secretId, version: secretVersion } },
             })),
           ],
         },
