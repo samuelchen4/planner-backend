@@ -2,5 +2,6 @@ config:
   gcp:project: planner-514904
   gcp:region: us-east4
   planner-backend:supabaseUrl: https://dfdwcpcwdxpuikjtmxci.supabase.co
-  planner-backend:imageTag: 3bc7aa4
+  planner-backend:imageTag: d73c316
   planner-backend:secretVersion: "2"
+  planner-backend:corsOrigins: https://planner-web-dev-qwgcby2x5a-uk.a.run.app,http://localhost:5173

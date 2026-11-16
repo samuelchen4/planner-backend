@@ -10,6 +10,7 @@ const stack = pulumi.getStack();
 const supabaseUrl = config.require('supabaseUrl');
 const imageTag = config.get('imageTag');
 const secretVersion = config.get('secretVersion') ?? 'latest';
+const corsOrigins = config.get('corsOrigins') ?? 'http://localhost:5173';
 
 const name = (suffix: string) => `planner-${suffix}-${stack}`;
 
@@ -93,6 +94,7 @@ const service = new gcp.cloudrunv2.Service(
           startupProbe: { httpGet: { path: '/health' } },
           envs: [
             { name: 'SUPABASE_URL', value: supabaseUrl },
+            { name: 'CORS_ORIGINS', value: corsOrigins },
             ...Object.entries(secrets).map(([envName, secret]) => ({
               name: envName,
               valueSource: { secretKeyRef: { secret: secret.secretId, version: secretVersion } },
