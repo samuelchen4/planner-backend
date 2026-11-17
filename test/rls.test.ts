@@ -53,8 +53,9 @@ describe('RLS', () => {
       method: 'POST',
       body: JSON.stringify({
         user_id: alice.id,
+        account_id: newId(),
         provider: 'google',
-        calendar_id: 'primary',
+        calendar_id: newId(),
         external_id: newId(),
       }),
     });

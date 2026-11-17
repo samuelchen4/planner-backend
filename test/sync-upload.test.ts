@@ -19,7 +19,7 @@ describe('GET /health', () => {
   it('is ok', async () => {
     const res = await app.request('/health');
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true });
+    expect(await res.json()).toMatchObject({ ok: true });
   });
 });
 

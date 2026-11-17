@@ -1,4 +1,12 @@
-import { doublePrecision, index, pgTable, text, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  doublePrecision,
+  index,
+  pgTable,
+  text,
+  uuid,
+  type AnyPgColumn,
+} from 'drizzle-orm/pg-core';
 
 import { day, oneOf, ownerId, ownRows, timestamptz } from './columns';
 
@@ -28,6 +36,8 @@ export const tasks = pgTable(
     color: text({ enum: TASK_COLORS }),
     icon: text(),
     position: doublePrecision().notNull().default(0),
+    /** Phase 2 (scaffolded, unused): also show this task in the user's Planner calendar. */
+    show_in_calendar: boolean().notNull().default(false),
 
     created_at: timestamptz().notNull().defaultNow(),
     updated_at: timestamptz().notNull().defaultNow(),

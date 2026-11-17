@@ -7,4 +7,8 @@ streams:
     queries:
       - SELECT * FROM tasks WHERE user_id = auth.user_id()
       - SELECT * FROM habit_days WHERE user_id = auth.user_id()
+      # Calendar integrations: display columns only. Credentials and sync state live in
+      # server-only tables that aren't in the publication.
+      - SELECT id, user_id, provider, email, status, created_at, updated_at FROM calendar_accounts WHERE user_id = auth.user_id()
+      - SELECT * FROM calendars WHERE user_id = auth.user_id()
       - SELECT * FROM external_events WHERE user_id = auth.user_id()

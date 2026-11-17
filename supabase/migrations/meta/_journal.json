@@ -15,6 +15,20 @@
       "when": 1794251902077,
       "tag": "20261109191822_powersync_publication",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794883697184,
+      "tag": "20261117024817_calendar_integrations",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794883712928,
+      "tag": "20261117024832_calendar_grants_and_publication",
+      "breakpoints": true
     }
   ]
 }
