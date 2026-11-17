@@ -126,6 +126,7 @@ These need accounts, consoles or secrets:
   for GitHub Actions deploys).
 - Connecting the app: the PowerSync connector in `planner-app` (`uploadData` → `/sync/upload`).
 - **Calendar migrations and sync rules** (step 2 of the calendar plan) are only applied locally:
-  `supabase db push` them to dev and deploy the updated `powersync/sync-rules.yaml`.
+  `pnpm exec supabase db push --remote` them to dev (load `.env` first for `SUPABASE_DB_PASSWORD`)
+  and deploy the updated `powersync/sync-rules.yaml`.
 - **Google Calendar setup** (calendar plan step 0): enable the Calendar API, the OAuth consent
   screen with every scope we'll use, a Web OAuth client, secrets in Secret Manager.
