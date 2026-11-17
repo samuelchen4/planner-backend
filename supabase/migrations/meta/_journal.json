@@ -29,6 +29,13 @@
       "when": 1794883712928,
       "tag": "20261117024832_calendar_grants_and_publication",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794884927059,
+      "tag": "20261117030847_powersync_role_grants",
+      "breakpoints": true
     }
   ]
 }
