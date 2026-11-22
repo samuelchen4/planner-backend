@@ -1,6 +1,14 @@
-import type { CalendarProvider, SyncResult, WebhookRequest, WebhookResult } from '../../provider';
+import { randomUUID } from 'node:crypto';
+
+import type {
+  CalendarProvider,
+  Subscription,
+  SyncResult,
+  WebhookRequest,
+  WebhookResult,
+} from '../../provider';
 import { stubProvider } from '../stub';
-import { listCalendarList, listEvents } from './api';
+import { listCalendarList, listEvents, stopChannel, watchEvents } from './api';
 import { toProviderCalendar, toProviderEvent } from './mapping';
 import { accessToken, authUrl, exchangeCode, revoke } from './oauth';
 
@@ -35,7 +43,39 @@ async function syncEvents(
   };
 }
 
-/** Google push notifications: X-Goog-* headers, no body. Subscribing arrives in step 6. */
+/** Channels last about a week; the engine replaces them a day before they expire. */
+const CHANNEL_TTL_SECONDS = 7 * 24 * 3600;
+
+async function subscribe(
+  token: string,
+  calendar: { providerCalendarId: string },
+  input: { callbackUrl: string; secret: string },
+): Promise<Subscription> {
+  const id = randomUUID();
+  const channel = await watchEvents(token, calendar.providerCalendarId, {
+    id,
+    address: input.callbackUrl,
+    token: input.secret,
+    ttlSeconds: CHANNEL_TTL_SECONDS,
+  });
+  const expiresAt = channel.expiration
+    ? new Date(Number(channel.expiration))
+    : new Date(Date.now() + CHANNEL_TTL_SECONDS * 1000);
+  return {
+    id: channel.id ?? id,
+    resourceId: channel.resourceId,
+    secret: input.secret,
+    expiresAt: expiresAt.toISOString(),
+  };
+}
+
+async function unsubscribe(token: string, subscription: Subscription) {
+  // Without the resource id Google can't stop it; it expires on its own within the week.
+  if (!subscription.resourceId) return;
+  await stopChannel(token, { id: subscription.id, resourceId: subscription.resourceId });
+}
+
+/** Google push notifications: X-Goog-* headers, no body. */
 function parseWebhook(req: WebhookRequest): WebhookResult {
   const subscriptionId = req.headers['x-goog-channel-id'];
   const state = req.headers['x-goog-resource-state'];
@@ -45,14 +85,18 @@ function parseWebhook(req: WebhookRequest): WebhookResult {
 }
 
 export const google: CalendarProvider = {
-  // Webhooks, pushing and editing are filled in by step 6 and phases 2–3.
+  // Pushing tasks and editing events are filled in by phases 2–3.
   ...stubProvider('google'),
-  capabilities: { webhooks: false, pushTasks: false, editEvents: false },
+  capabilities: { webhooks: true, pushTasks: false, editEvents: false },
   authUrl,
   exchangeCode,
   accessToken,
   revoke,
   listCalendars: async (token) => (await listCalendarList(token)).items.map(toProviderCalendar),
   syncEvents,
+  subscribe,
+  // Google channels can't be extended: a new channel replaces the old (the engine stops it).
+  renew: (token, calendar, _old, input) => subscribe(token, calendar, input),
+  unsubscribe,
   parseWebhook,
 };

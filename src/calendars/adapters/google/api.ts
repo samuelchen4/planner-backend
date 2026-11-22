@@ -46,16 +46,27 @@ interface Page<T> {
 
 const RATE_LIMIT_REASONS = new Set(['rateLimitExceeded', 'userRateLimitExceeded', 'quotaExceeded']);
 
-async function get<T>(token: string, path: string, params: Record<string, string>): Promise<T> {
-  const res = await fetch(`${API}${path}?${new URLSearchParams(params)}`, {
-    headers: { Authorization: `Bearer ${token}` },
+async function request<T>(
+  token: string,
+  path: string,
+  params: Record<string, string>,
+  body?: unknown,
+): Promise<T> {
+  const query = new URLSearchParams(params).toString();
+  const res = await fetch(`${API}${path}${query ? `?${query}` : ''}`, {
+    ...(body !== undefined && { method: 'POST', body: JSON.stringify(body) }),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(body !== undefined && { 'Content-Type': 'application/json' }),
+    },
   });
+  if (res.status === 204) return undefined as T;
   if (res.ok) return (await res.json()) as T;
 
-  const body = (await res.json().catch(() => null)) as {
+  const failure = (await res.json().catch(() => null)) as {
     error?: { errors?: { reason?: string }[]; message?: string };
   } | null;
-  const reason = body?.error?.errors?.[0]?.reason;
+  const reason = failure?.error?.errors?.[0]?.reason;
   if (res.status === 410) throw new CursorExpired(reason);
   if (res.status === 429 || (res.status === 403 && reason && RATE_LIMIT_REASONS.has(reason))) {
     throw new RateLimited(Number(res.headers.get('retry-after')) || 30);
@@ -69,7 +80,10 @@ async function getAll<T>(token: string, path: string, params: Record<string, str
   const items: T[] = [];
   let pageToken: string | undefined;
   for (;;) {
-    const page = await get<Page<T>>(token, path, { ...params, ...(pageToken && { pageToken }) });
+    const page = await request<Page<T>>(token, path, {
+      ...params,
+      ...(pageToken && { pageToken }),
+    });
     items.push(...(page.items ?? []));
     pageToken = page.nextPageToken;
     // The sync token (and the calendar's zone) come on the last page only.
@@ -96,4 +110,44 @@ export function listEvents(
     maxResults: '2500',
     ...from,
   });
+}
+
+export interface GoogleChannel {
+  id: string;
+  resourceId: string;
+  /** Milliseconds since the epoch, as a string. */
+  expiration?: string;
+}
+
+/**
+ * Push notifications for a calendar's events: Google POSTs to `address` (HTTPS) with the channel
+ * id and `token` in X-Goog-* headers whenever something changes. Channels can't be extended, only
+ * replaced; `ttlSeconds` is a request (Google may cap it).
+ */
+export function watchEvents(
+  token: string,
+  calendarId: string,
+  channel: { id: string; address: string; token: string; ttlSeconds: number },
+) {
+  return request<GoogleChannel>(
+    token,
+    `/calendars/${encodeURIComponent(calendarId)}/events/watch`,
+    {},
+    {
+      id: channel.id,
+      type: 'web_hook',
+      address: channel.address,
+      token: channel.token,
+      params: { ttl: String(channel.ttlSeconds) },
+    },
+  );
+}
+
+/** Stop a channel. Already stopped or expired (404) counts as done. */
+export async function stopChannel(token: string, channel: { id: string; resourceId: string }) {
+  try {
+    await request<void>(token, '/channels/stop', {}, channel);
+  } catch (e) {
+    if (!(e instanceof CalendarNotFound)) throw e;
+  }
 }

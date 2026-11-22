@@ -123,7 +123,16 @@ export interface CalendarProvider {
     calendar: CalendarRef,
     input: { callbackUrl: string; secret: string },
   ): Promise<Subscription>;
-  renew(token: string, calendar: CalendarRef, subscription: Subscription): Promise<Subscription>;
+  /**
+   * Extend a subscription. Providers that can't (Google) return a new one with a different id;
+   * the engine then stops the old one.
+   */
+  renew(
+    token: string,
+    calendar: CalendarRef,
+    subscription: Subscription,
+    input: { callbackUrl: string; secret: string },
+  ): Promise<Subscription>;
   unsubscribe(token: string, subscription: Subscription): Promise<void>;
   parseWebhook(req: WebhookRequest): WebhookResult;
 

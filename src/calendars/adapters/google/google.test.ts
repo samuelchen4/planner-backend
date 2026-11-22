@@ -235,3 +235,59 @@ describe('webhooks', () => {
     expect(parse({})).toEqual({ kind: 'invalid' });
   });
 });
+
+describe('live updates', () => {
+  const cal = { providerCalendarId: 'me@gmail.com', windowStart: null, windowEnd: null };
+  const input = { callbackUrl: 'https://api.example/webhooks/google', secret: 'sec' };
+  const sentBody = (call = 0) =>
+    JSON.parse(String((fetchMock.mock.calls[call]![1] as RequestInit).body)) as Record<
+      string,
+      unknown
+    >;
+
+  it('starts a channel for the calendar and reads its expiry', async () => {
+    fetchMock.mockResolvedValueOnce(
+      json({
+        kind: 'api#channel',
+        id: 'ignored',
+        resourceId: 'res-1',
+        expiration: '1795900000000',
+      }),
+    );
+    const sub = await google.subscribe('t', cal, input);
+    const url = requestedUrl();
+    expect(url.pathname).toBe('/calendar/v3/calendars/me%40gmail.com/events/watch');
+    expect((fetchMock.mock.calls[0]![1] as RequestInit).method).toBe('POST');
+    expect(sentBody()).toMatchObject({
+      type: 'web_hook',
+      address: 'https://api.example/webhooks/google',
+      token: 'sec',
+      params: { ttl: String(7 * 24 * 3600) },
+    });
+    expect(sub).toEqual({
+      id: 'ignored',
+      resourceId: 'res-1',
+      secret: 'sec',
+      expiresAt: new Date(1795900000000).toISOString(),
+    });
+  });
+
+  it('renews by starting a new channel', async () => {
+    fetchMock.mockResolvedValueOnce(json({ id: 'new', resourceId: 'res-2' }));
+    const old = { id: 'old', resourceId: 'res-1', secret: 'x', expiresAt: '2026-11-23T00:00:00Z' };
+    const sub = await google.renew('t', cal, old, input);
+    expect(requestedUrl().pathname).toMatch(/\/events\/watch$/);
+    expect(sub.id).not.toBe('old');
+  });
+
+  it('stops a channel, treating an already-gone one as stopped', async () => {
+    const sub = { id: 'ch', resourceId: 'res', secret: 's', expiresAt: '2026-11-23T00:00:00Z' };
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    await google.unsubscribe('t', sub);
+    expect(requestedUrl().pathname).toBe('/calendar/v3/channels/stop');
+    expect(sentBody()).toEqual({ id: 'ch', resourceId: 'res' });
+
+    fetchMock.mockResolvedValueOnce(json({ error: { errors: [{ reason: 'notFound' }] } }, 404));
+    await expect(google.unsubscribe('t', sub)).resolves.toBeUndefined();
+  });
+});

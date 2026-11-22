@@ -78,7 +78,7 @@ Upload rules:
 ## Calendar integrations
 
 Plan: `~/Documents/projects/planner-app/notes/calendar-integrations.md` (provider adapters, read-only
-first with two-way scaffolded, detachable into its own service). Built so far (step 2):
+first with two-way scaffolded, detachable into its own service). Built so far:
 
 - Tables in `src/db/schema/calendars/`: `calendar_accounts`, `calendar_credentials` (server-only),
   `calendars` (clients may update only `is_selected`, by column grant), `calendar_sync_state`
@@ -91,6 +91,19 @@ first with two-way scaffolded, detachable into its own service). Built so far (s
   subscription secret, queues `sync-calendar`), `/jobs/calendar/:type` (Google OIDC only; refuses
   everything until `CALENDAR_JOBS_INVOKER` and `CALENDAR_JOBS_URL` are set) and `/integrations`
   (empty until step 3). Config in `calendars/env.ts` (see `.env.example`).
+- **Steps 3–4 (connect, event sync)**: `/integrations/:provider/start` → consent →
+  `/integrations/:provider/callback` stores the login encrypted (`credentials.ts`, AES-256-GCM),
+  imports the calendar list (primary on), and full-syncs it (30 days back, then incremental by
+  cursor; expired cursor → full sync). `engine/sync.ts` writes events and the cursor in one
+  transaction; a sync that loses a race re-queues itself. `DELETE /integrations/accounts/:id`
+  stops live updates, revokes and deletes.
+- **Step 6 (live updates)**: switching a calendar on subscribes it (`engine/subscriptions.ts`;
+  Google watch channels to `/webhooks/google`, ~1 week) before the full sync; off unsubscribes.
+  Pings queue `sync-calendar`, merged per calendar over 10 s. Deployed, the queue is Cloud Tasks
+  (`engine/cloud-tasks.ts`, REST + the metadata server's token); Cloud Scheduler runs `poll`
+  (every 20 min, fans out one sync per calendar) and `renew-subscriptions` (daily: anything
+  without a subscription or expiring within a day). Locally the queue is inline and nothing
+  subscribes (no public HTTPS URL).
 - **Detachable**: the rest of the API imports only `src/calendars/index.ts` and only queues jobs;
   the module imports only `db/`, `auth` and `lib/` (ESLint enforces both). `SERVICE_ROLE` =
   `all` (default) | `api` (no calendar routes) | `sync` (only calendar routes + `/health`).

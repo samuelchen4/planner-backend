@@ -147,27 +147,46 @@ export class FakeProvider implements CalendarProvider {
     return { upserts, deletes, cursor: String(log.length) };
   }
 
-  async subscribe(_token: string, calendar: { providerCalendarId: string }) {
+  /** Live subscriptions by id (stopped ones are removed), for assertions. */
+  subscriptions = new Map<string, Subscription & { calendarId: string; callbackUrl: string }>();
+
+  async subscribe(
+    _token: string,
+    calendar: { providerCalendarId: string },
+    input: { callbackUrl: string; secret: string },
+  ) {
     this.call(`subscribe:${calendar.providerCalendarId}`);
-    return this.newSubscription();
+    return this.newSubscription(calendar.providerCalendarId, input);
   }
 
-  async renew(_token: string, calendar: { providerCalendarId: string }) {
+  /** Like Google: a new subscription replaces the old one. */
+  async renew(
+    _token: string,
+    calendar: { providerCalendarId: string },
+    _old: Subscription,
+    input: { callbackUrl: string; secret: string },
+  ) {
     this.call(`renew:${calendar.providerCalendarId}`);
-    return this.newSubscription();
+    return this.newSubscription(calendar.providerCalendarId, input);
   }
 
   async unsubscribe(_token: string, subscription: Subscription) {
     this.call(`unsubscribe:${subscription.id}`);
+    this.subscriptions.delete(subscription.id);
   }
 
-  private newSubscription(): Subscription {
-    return {
+  private newSubscription(
+    calendarId: string,
+    input: { callbackUrl: string; secret: string },
+  ): Subscription {
+    const subscription = {
       id: randomUUID(),
-      resourceId: null,
-      secret: randomUUID(),
+      resourceId: `resource-${calendarId}`,
+      secret: input.secret,
       expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
     };
+    this.subscriptions.set(subscription.id, { ...subscription, calendarId, ...input });
+    return subscription;
   }
 
   parseWebhook(req: { headers: Record<string, string | undefined> }) {

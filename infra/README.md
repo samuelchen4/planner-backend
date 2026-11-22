@@ -51,10 +51,14 @@ pulumi up
 ```
 
 Also add `<apiUrl>/integrations/google/callback` to the OAuth client's redirect URIs in Google
-Cloud Console. Until Cloud Tasks lands (plan step 6), calendar jobs run in-process, so
-`calendars: true` also turns off CPU throttling between requests (still scales to zero).
+Cloud Console.
+
+With `calendars: true` and `calendarPublicUrl` set, live updates are on: a Cloud Tasks queue
+(`planner-calendar-<stack>`) for calendar jobs, Cloud Scheduler jobs (`poll` every 20 minutes,
+`renew-subscriptions` daily), and a `planner-jobs-<stack>` service account whose OIDC tokens the
+`/jobs/calendar/*` route requires. Without `calendarPublicUrl`, jobs run in-process and CPU
+throttling is turned off instead.
 
 ## Still to add
 - Workload Identity Federation + a deploy service account, so GitHub Actions can push and deploy.
-- Cloud Scheduler for the Google Calendar worker (watch-channel renewal).
 - A custom domain.

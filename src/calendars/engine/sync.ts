@@ -5,6 +5,7 @@ import { calendarAccounts, calendars, calendarSyncState, externalEvents } from '
 import { CalendarNotFound, CursorExpired, type ProviderEvent, type SyncResult } from '../provider';
 import { withAccess } from './accounts';
 import { enqueueCalendarJob } from './jobs';
+import { subscribeCalendar, unsubscribeCalendar } from './subscriptions';
 
 // Mirrors one calendar into external_events. Provider calls happen outside any transaction; the
 // write is one transaction that also saves the new cursor, so a crash replays the same changes
@@ -108,8 +109,9 @@ async function applyResult(
 /**
  * Bring one calendar up to date: changes since its cursor, or everything (`full`, no cursor yet,
  * or the cursor expired). Skips calendars that aren't selected. If another sync of the same
- * calendar committed while this one was fetching, this one's result is dropped: the other's
- * cursor is older or equal, so the next sync fetches anything this one saw.
+ * calendar committed while this one was fetching, this one's result is dropped and another sync
+ * is queued: the other's result may be older than this one's, so this makes sure nothing waits
+ * for the scheduled poll.
  */
 export async function syncCalendar(calendarId: string, options: { full?: boolean } = {}) {
   const [cal] = await db
@@ -163,18 +165,19 @@ export async function syncCalendar(calendarId: string, options: { full?: boolean
       throw e;
     }
 
-    await db.transaction(async (tx) => {
+    const lostRace = await db.transaction(async (tx) => {
       const [locked] = await tx
         .select({ cursor: calendarSyncState.cursor })
         .from(calendarSyncState)
         .where(eq(calendarSyncState.calendar_id, cal.id))
         .for('update');
-      if (!locked || (locked.cursor ?? null) !== readCursor) return;
+      if (!locked) return false;
+      if ((locked.cursor ?? null) !== readCursor) return true;
       const [still] = await tx
         .select({ selected: calendars.is_selected })
         .from(calendars)
         .where(eq(calendars.id, cal.id));
-      if (!still?.selected) return; // switched off meanwhile; the deselect cleared it
+      if (!still?.selected) return false; // switched off meanwhile; the deselect cleared it
 
       await applyResult(tx, cal, result, cursor === null);
       await tx
@@ -190,13 +193,16 @@ export async function syncCalendar(calendarId: string, options: { full?: boolean
           updated_at: sql`now()`,
         })
         .where(eq(calendarSyncState.calendar_id, cal.id));
+      return false;
     });
+    if (lostRace) await enqueueCalendarJob({ type: 'sync-calendar', calendarId: cal.id });
   });
 }
 
 /**
- * A calendar was switched on or off. On: start over with a full sync (live updates subscribe here
- * in step 6). Off: remove its events and forget the cursor (and unsubscribe, step 6).
+ * A calendar was switched on or off. On: subscribe to live updates, then start over with a full
+ * sync (subscribing first means no change between the two is missed). Off: unsubscribe, remove
+ * its events and forget the cursor.
  */
 export async function calendarSelectionChanged(calendarId: string) {
   const [cal] = await db.select().from(calendars).where(eq(calendars.id, calendarId));
@@ -209,9 +215,14 @@ export async function calendarSelectionChanged(calendarId: string) {
         target: calendarSyncState.calendar_id,
         set: { cursor: null, window_start: null, window_end: null, updated_at: sql`now()` },
       });
+    // A calendar that can't be watched still syncs (and gets the scheduled poll).
+    await subscribeCalendar(cal.id).catch((e) =>
+      console.warn(`[calendars] subscribing calendar ${cal.id} failed`, e),
+    );
     await syncCalendar(cal.id, { full: true });
     return;
   }
+  await unsubscribeCalendar(cal.id);
   await db.transaction(async (tx) => {
     await tx.delete(externalEvents).where(eq(externalEvents.calendar_id, cal.id));
     await tx
@@ -221,7 +232,10 @@ export async function calendarSelectionChanged(calendarId: string) {
   });
 }
 
-/** Scheduled backup: incremental sync of every selected calendar of every active account. */
+/**
+ * Scheduled backup: queue an incremental sync of every selected calendar of every active account
+ * (one job each, so one slow calendar doesn't hold up the rest).
+ */
 export async function pollAll() {
   const rows = await db
     .select({ id: calendars.id })
@@ -235,6 +249,6 @@ export async function pollAll() {
       ),
     );
   for (const { id } of rows) {
-    await syncCalendar(id).catch((e) => console.error(`[calendars] poll of ${id} failed`, e));
+    await enqueueCalendarJob({ type: 'sync-calendar', calendarId: id });
   }
 }

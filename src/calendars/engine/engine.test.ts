@@ -11,12 +11,14 @@ import {
   calendarSyncState,
   externalEvents,
 } from '../../db/schema';
+import { resetCalendarEnv } from '../env';
 import { calendarPublicRoutes } from '../index';
 import { overrideProvider, resetProviders } from '../registry';
 import { FakeProvider } from '../testing/fake-provider';
 import { connectAccount, disconnectAccount } from './accounts';
 import { syncCalendarList } from './calendar-list';
-import { drainCalendarJobs } from './jobs';
+import { drainCalendarJobs, setCalendarJobHandler, type CalendarJob } from './jobs';
+import { renewSubscriptions } from './subscriptions';
 import { calendarSelectionChanged, syncCalendar } from './sync';
 
 // The provider-neutral engine against the fake provider and the local database: connecting,
@@ -331,5 +333,111 @@ describe('connect routes', () => {
     expect(
       await db.select().from(calendarAccounts).where(eq(calendarAccounts.id, accountId)),
     ).toEqual([]);
+  });
+});
+
+describe('live updates', () => {
+  beforeEach(() => {
+    process.env.CALENDAR_PUBLIC_URL = 'https://api.example';
+    resetCalendarEnv();
+  });
+  afterEach(() => {
+    delete process.env.CALENDAR_PUBLIC_URL;
+    resetCalendarEnv();
+  });
+
+  const stateOf = async (calId: string) =>
+    (await db.select().from(calendarSyncState).where(eq(calendarSyncState.calendar_id, calId)))[0]!;
+
+  it('subscribes a calendar when it is switched on, pointing at our webhook', async () => {
+    const accountId = await connect();
+    const personal = await calendarId(accountId, 'me@gmail.com');
+    const state = await stateOf(personal);
+    expect(state.subscription_id).toBeTruthy();
+    const live = fake.subscriptions.get(state.subscription_id!);
+    expect(live).toMatchObject({
+      calendarId: 'me@gmail.com',
+      callbackUrl: 'https://api.example/webhooks/google',
+      secret: state.subscription_secret,
+    });
+    // Subscribed before the full sync, so nothing in between is missed.
+    const order = fake.calls.filter(
+      (c) => c.startsWith('subscribe:') || c.startsWith('syncEvents:'),
+    );
+    expect(order[0]).toBe('subscribe:me@gmail.com');
+    // The calendar left off isn't watched.
+    const team = await calendarId(accountId, 'team');
+    expect([...fake.subscriptions.values()].map((s) => s.calendarId)).toEqual(['me@gmail.com']);
+    expect(
+      await db.select().from(calendarSyncState).where(eq(calendarSyncState.calendar_id, team)),
+    ).toEqual([]);
+  });
+
+  it("a ping with the subscription's secret queues a sync of that calendar", async () => {
+    const accountId = await connect();
+    const personal = await calendarId(accountId, 'me@gmail.com');
+    const state = await stateOf(personal);
+    const seen: CalendarJob[] = [];
+    const restore = setCalendarJobHandler('sync-calendar', async (job) => {
+      seen.push(job);
+    });
+    const app = new Hono().route('/', calendarPublicRoutes);
+    const res = await app.request('/webhooks/google', {
+      method: 'POST',
+      headers: {
+        'x-fake-subscription': state.subscription_id!,
+        'x-fake-secret': state.subscription_secret!,
+      },
+    });
+    await drainCalendarJobs();
+    restore();
+    expect(res.status).toBe(202);
+    expect(seen).toEqual([{ type: 'sync-calendar', calendarId: personal }]);
+  });
+
+  it('unsubscribes when switched off', async () => {
+    const accountId = await connect();
+    const personal = await calendarId(accountId, 'me@gmail.com');
+    const { subscription_id } = await stateOf(personal);
+    await db.update(calendars).set({ is_selected: false }).where(eq(calendars.id, personal));
+    await calendarSelectionChanged(personal);
+    expect(fake.calls).toContain(`unsubscribe:${subscription_id}`);
+    expect(fake.subscriptions.size).toBe(0);
+    expect((await stateOf(personal)).subscription_id).toBeNull();
+  });
+
+  it('renews subscriptions close to expiring (new one first, then stops the old)', async () => {
+    const accountId = await connect();
+    const personal = await calendarId(accountId, 'me@gmail.com');
+    const old = await stateOf(personal);
+
+    await renewSubscriptions(); // a week left: nothing to do
+    expect((await stateOf(personal)).subscription_id).toBe(old.subscription_id);
+
+    await db
+      .update(calendarSyncState)
+      .set({ subscription_expires_at: new Date(Date.now() + 3600_000).toISOString() })
+      .where(eq(calendarSyncState.calendar_id, personal));
+    await renewSubscriptions();
+    const renewed = await stateOf(personal);
+    expect(renewed.subscription_id).not.toBe(old.subscription_id);
+    expect(renewed.subscription_secret).not.toBe(old.subscription_secret);
+    expect(fake.calls.indexOf('renew:me@gmail.com')).toBeLessThan(
+      fake.calls.indexOf(`unsubscribe:${old.subscription_id}`),
+    );
+    expect([...fake.subscriptions.keys()]).toEqual([renewed.subscription_id]);
+  });
+
+  it('subscribes selected calendars that have none yet (e.g. connected before live updates)', async () => {
+    delete process.env.CALENDAR_PUBLIC_URL;
+    resetCalendarEnv();
+    const accountId = await connect(); // no public URL: no subscription
+    const personal = await calendarId(accountId, 'me@gmail.com');
+    expect((await stateOf(personal)).subscription_id).toBeNull();
+
+    process.env.CALENDAR_PUBLIC_URL = 'https://api.example';
+    resetCalendarEnv();
+    await renewSubscriptions();
+    expect((await stateOf(personal)).subscription_id).toBeTruthy();
   });
 });

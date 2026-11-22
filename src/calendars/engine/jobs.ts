@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { calendarEnv } from '../env';
 import { disconnectAccount, disconnectAll } from './accounts';
 import { syncCalendarList } from './calendar-list';
+import { createTask } from './cloud-tasks';
+import { renewSubscriptions } from './subscriptions';
 import { calendarSelectionChanged, pollAll, syncCalendar } from './sync';
 
 // Every unit of calendar work is a job. The rest of the API only ever queues jobs (never calls
@@ -47,7 +49,7 @@ const handlers: Handlers = {
   'sync-calendar': (job) => syncCalendar(job.calendarId),
   'sync-calendar-list': (job) => syncCalendarList(job.accountId),
   'calendar-selection-changed': (job) => calendarSelectionChanged(job.calendarId),
-  'renew-subscriptions': notYet('step 6 (live updates)'),
+  'renew-subscriptions': () => renewSubscriptions(),
   poll: () => pollAll(),
   rebaseline: notYet('step 8 (Outlook)'),
   'disconnect-account': (job) => disconnectAccount(job.accountId),
@@ -63,20 +65,43 @@ export function runCalendarJob(job: CalendarJob): Promise<void> {
 
 // ─── The queue ───────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Syncs of one calendar asked for within this many seconds run once, at the end of the window.
+ * One edit in Google can send several webhooks; this turns the burst into a single sync.
+ */
+export const SYNC_COALESCE_SECONDS = 10;
+
+const coalesceKey = (job: CalendarJob) =>
+  job.type === 'sync-calendar' ? `sync-${job.calendarId}` : undefined;
+
 const inFlight = new Set<Promise<void>>();
+const pendingInline = new Set<string>();
 
 /**
- * Queue a job. `inline` (local dev, tests, and until Cloud Tasks is set up in step 6): runs in
- * this process right after the caller's request, errors logged. `cloud-tasks`: a task targeting
- * CALENDAR_JOBS_URL/jobs/calendar/<type>, so after a split only that URL changes.
+ * Queue a job. `cloud-tasks` (deployed): a task that calls CALENDAR_JOBS_URL/jobs/calendar/<type>
+ * with a signed token; Cloud Tasks retries failures. `inline` (local dev, tests): runs in this
+ * process right after the caller's request, errors logged. Either way, syncs of one calendar
+ * queued close together are merged.
  */
 export async function enqueueCalendarJob(job: CalendarJob): Promise<void> {
   const parsed = calendarJobSchema.parse(job);
+  const key = coalesceKey(parsed);
   if (calendarEnv().CALENDAR_QUEUE === 'cloud-tasks') {
-    throw new Error('Cloud Tasks queueing arrives in step 6 of the calendar plan');
+    const { type, ...payload } = parsed;
+    await createTask(type, payload, {
+      ...(key && { coalesce: { key, seconds: SYNC_COALESCE_SECONDS } }),
+    });
+    return;
+  }
+  if (key) {
+    if (pendingInline.has(key)) return; // the queued one hasn't started; it will see this change
+    pendingInline.add(key);
   }
   const run = new Promise<void>((resolve) => setImmediate(resolve))
-    .then(() => runCalendarJob(parsed))
+    .then(() => {
+      if (key) pendingInline.delete(key);
+      return runCalendarJob(parsed);
+    })
     .catch((e) => console.error(`[calendars] job ${parsed.type} failed`, e))
     .finally(() => inFlight.delete(run));
   inFlight.add(run);

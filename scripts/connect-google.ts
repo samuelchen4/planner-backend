@@ -13,7 +13,11 @@
  * and event counts once the first sync lands. Event titles aren't printed.
  */
 const email = process.argv[2];
-if (!email) throw new Error('Usage: connect-google.ts <planner account email>');
+if (!email) throw new Error('Usage: connect-google.ts <planner account email> [deployed API URL]');
+// With a URL, the deployed API handles the connect (its callback must be in the OAuth client);
+// without one, the API is served here on :8787.
+const remoteApi = process.argv[3]?.replace(/\/$/, '');
+const API = remoteApi ?? 'http://localhost:8787';
 const need = (name: string) => {
   const v = process.env[name];
   if (!v) throw new Error(`${name} is missing from .env`);
@@ -29,10 +33,13 @@ need('GOOGLE_CLIENT_ID');
 need('CALENDAR_CREDENTIALS_KEY');
 
 // Env is read at import time, so the app comes in after the overrides above.
-const { serve } = await import('@hono/node-server');
-const { app } = await import('../src/app');
 const { client } = await import('../src/db/client');
-const server = serve({ fetch: app.fetch, port: 8787 });
+let server: { close(): void } | undefined;
+if (!remoteApi) {
+  const { serve } = await import('@hono/node-server');
+  const { app } = await import('../src/app');
+  server = serve({ fetch: app.fetch, port: 8787 });
+}
 
 async function admin<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${supabase}/auth/v1/${path}`, {
@@ -57,7 +64,7 @@ const session = await admin<{ access_token: string; user: { id: string } }>('ver
   token_hash,
 });
 
-const started = await fetch('http://localhost:8787/integrations/google/start', {
+const started = await fetch(`${API}/integrations/google/start`, {
   method: 'POST',
   headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
   body: JSON.stringify({ returnScheme: 'planner-local' }),
@@ -97,6 +104,6 @@ if (accountId) {
 } else {
   console.log('No account connected within 5 minutes.');
 }
-server.close();
+server?.close();
 await client.end({ timeout: 5 });
 process.exit(accountId ? 0 : 1);

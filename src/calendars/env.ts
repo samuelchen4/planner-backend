@@ -21,6 +21,8 @@ const schema = z.object({
   CALENDAR_JOBS_URL: z.string().url().optional(),
   /** `inline`: jobs run in this process (local dev, tests). `cloud-tasks`: queued in GCP. */
   CALENDAR_QUEUE: z.enum(['inline', 'cloud-tasks']).default('inline'),
+  /** `cloud-tasks`: the queue, `projects/<p>/locations/<region>/queues/<name>`. */
+  CALENDAR_TASKS_QUEUE: z.string().optional(),
   /** Service account allowed to call /jobs/calendar/* (Cloud Tasks and Scheduler OIDC tokens). */
   CALENDAR_JOBS_INVOKER: z.string().optional(),
   /** Phase 2/3 switch: pushing tasks and event edits to providers. */
