@@ -9,3 +9,8 @@ process.env.SUPABASE_URL = status.API_URL;
 process.env.SUPABASE_JWT_SECRET = status.JWT_SECRET;
 process.env.TEST_ANON_KEY = status.ANON_KEY;
 process.env.TEST_SERVICE_ROLE_KEY = status.SERVICE_ROLE_KEY;
+
+// Calendar module: a throwaway encryption key, so tests never need (or see) real secrets.
+process.env.CALENDAR_CREDENTIALS_KEY ??= (await import('node:crypto'))
+  .randomBytes(32)
+  .toString('base64');

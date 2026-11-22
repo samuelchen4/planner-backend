@@ -59,8 +59,8 @@ export interface SyncResult {
   /** Provider event ids that were deleted or cancelled. */
   deletes: string[];
   cursor: string;
-  /** Set when the adapter chose (or re-baselined) a date window. */
-  window?: { start: string; end: string };
+  /** Set on a full sync: the date window the new cursor covers (end null = open-ended). */
+  window?: { start: string; end: string | null };
 }
 
 export interface Subscription {
@@ -175,6 +175,14 @@ export class RateLimited extends Error {
   ) {
     super(message);
     this.name = 'RateLimited';
+  }
+}
+
+/** The calendar no longer exists at the provider (deleted, or access removed). */
+export class CalendarNotFound extends Error {
+  constructor(message = 'The calendar is gone at the provider') {
+    super(message);
+    this.name = 'CalendarNotFound';
   }
 }
 

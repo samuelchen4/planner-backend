@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
 import { calendarEnv } from '../env';
+import { disconnectAccount, disconnectAll } from './accounts';
+import { syncCalendarList } from './calendar-list';
+import { calendarSelectionChanged, pollAll, syncCalendar } from './sync';
 
 // Every unit of calendar work is a job. The rest of the API only ever queues jobs (never calls
 // the engine), so the engine can move to its own service by pointing the queue elsewhere.
@@ -38,16 +41,17 @@ const notYet = (step: string) => async (job: CalendarJob) => {
   console.info(`[calendars] job ${job.type} received; handler arrives in ${step}`);
 };
 
-// Filled in by later steps of the plan (engine/sync.ts, subscriptions.ts, push.ts).
+// Arrows (not direct references): the engine modules import this one, so handlers resolve their
+// targets at call time.
 const handlers: Handlers = {
-  'sync-calendar': notYet('step 4 (event sync)'),
-  'sync-calendar-list': notYet('step 3 (connect)'),
-  'calendar-selection-changed': notYet('step 4 (event sync)'),
+  'sync-calendar': (job) => syncCalendar(job.calendarId),
+  'sync-calendar-list': (job) => syncCalendarList(job.accountId),
+  'calendar-selection-changed': (job) => calendarSelectionChanged(job.calendarId),
   'renew-subscriptions': notYet('step 6 (live updates)'),
-  poll: notYet('step 6 (live updates)'),
+  poll: () => pollAll(),
   rebaseline: notYet('step 8 (Outlook)'),
-  'disconnect-account': notYet('step 3 (connect)'),
-  'disconnect-all': notYet('step 3 (connect)'),
+  'disconnect-account': (job) => disconnectAccount(job.accountId),
+  'disconnect-all': (job) => disconnectAll(job.userId),
   'push-task': notYet('phase 2'),
   'push-event': notYet('phase 3'),
 };
