@@ -2,7 +2,7 @@ config:
   gcp:project: planner-514904
   gcp:region: us-east4
   planner-backend:supabaseUrl: https://dfdwcpcwdxpuikjtmxci.supabase.co
-  planner-backend:imageTag: 7af087a
+  planner-backend:imageTag: 6e3c378
   planner-backend:secretVersion: "2"
   planner-backend:corsOrigins: https://planner-web-dev-qwgcby2x5a-uk.a.run.app,http://localhost:5173
   planner-backend:googleClientId: 64776575094-7qinfqd7ovj3aasccn8heifcs27je5fs.apps.googleusercontent.com

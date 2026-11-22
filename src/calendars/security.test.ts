@@ -34,6 +34,16 @@ describe('connect state', () => {
     expect(verifyState(signState(input))).toMatchObject(input);
   });
 
+  it('carries a web return URL instead of an app scheme', () => {
+    const web = {
+      userId: input.userId,
+      provider: 'google' as const,
+      returnUrl: 'http://localhost:5173/settings/calendars',
+      features: ['read' as const],
+    };
+    expect(verifyState(signState(web))).toMatchObject(web);
+  });
+
   it('rejects forged, edited and expired states', () => {
     const state = signState(input);
     const [body, sig] = state.split('.');

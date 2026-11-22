@@ -303,6 +303,37 @@ describe('connect routes', () => {
     );
   });
 
+  it('returns the web app to its own page, and only to allowed origins', async () => {
+    const page = 'http://localhost:5173/settings/calendars';
+    const started = await app.request('/integrations/google/start', {
+      method: 'POST',
+      headers: auth(),
+      body: JSON.stringify({ returnUrl: page }),
+    });
+    expect(started.status).toBe(200);
+    const { url } = (await started.json()) as { url: string };
+    const state = new URL(url).searchParams.get('state')!;
+
+    const declined = await app.request(
+      `/integrations/google/callback?error=access_denied&state=${encodeURIComponent(state)}`,
+    );
+    expect(declined.headers.get('location')).toBe(
+      `${page}?calendar_connect=error&provider=google&reason=access_denied`,
+    );
+    const done = await app.request(
+      `/integrations/google/callback?code=${user.id}&state=${encodeURIComponent(state)}`,
+    );
+    expect(done.headers.get('location')).toBe(`${page}?calendar_connect=done&provider=google`);
+    await drainCalendarJobs();
+
+    const evil = await app.request('/integrations/google/start', {
+      method: 'POST',
+      headers: auth(),
+      body: JSON.stringify({ returnUrl: 'https://evil.example/steal' }),
+    });
+    expect(evil.status).toBe(400);
+  });
+
   it('rejects a forged or mismatched state', async () => {
     expect((await app.request('/integrations/google/callback?code=x&state=forged')).status).toBe(
       400,

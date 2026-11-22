@@ -15,7 +15,10 @@ export const RETURN_SCHEMES = ['planner', 'planner-local'] as const;
 const payloadSchema = z.object({
   userId: z.uuid(),
   provider: z.enum(CALENDAR_PROVIDERS),
-  returnScheme: z.enum(RETURN_SCHEMES),
+  /** Where to send the user afterwards: an app (URL scheme) or a page of the web app. */
+  returnScheme: z.enum(RETURN_SCHEMES).optional(),
+  /** Web app page; its origin was checked against CALENDAR_WEB_ORIGINS when the state was made. */
+  returnUrl: z.url().optional(),
   features: z.array(z.enum(['read', 'pushTasks', 'editEvents'])),
   expiresAt: z.number(),
 });

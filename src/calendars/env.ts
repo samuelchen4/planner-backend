@@ -17,6 +17,16 @@ const schema = z.object({
   CALENDAR_CREDENTIALS_KEY: z.string().optional(),
   /** Public base URL providers call for webhooks and OAuth callbacks (a tunnel when local). */
   CALENDAR_PUBLIC_URL: z.string().url().optional(),
+  /** Web app origins a connect flow may return to (comma-separated), e.g. https://app.example. */
+  CALENDAR_WEB_ORIGINS: z
+    .string()
+    .default('http://localhost:5173')
+    .transform((s) =>
+      s
+        .split(',')
+        .map((o) => o.trim().replace(/\/$/, ''))
+        .filter(Boolean),
+    ),
   /** Where queued jobs are sent (Cloud Tasks target). Defaults to this service. */
   CALENDAR_JOBS_URL: z.string().url().optional(),
   /** `inline`: jobs run in this process (local dev, tests). `cloud-tasks`: queued in GCP. */

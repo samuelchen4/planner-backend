@@ -27,13 +27,28 @@ function publicBase(c: Context) {
 const redirectUri = (c: Context, provider: string) =>
   `${publicBase(c)}/integrations/${provider}/callback`;
 
-const startBody = z.object({ returnScheme: z.enum(RETURN_SCHEMES).default('planner') });
+const startBody = z.object({
+  returnScheme: z.enum(RETURN_SCHEMES).optional(),
+  /** The web app: an absolute URL on one of CALENDAR_WEB_ORIGINS. */
+  returnUrl: z.url().optional(),
+});
+
+/** Only our own web app may be returned to (no open redirect). */
+const allowedReturnUrl = (url: string) => {
+  try {
+    return calendarEnv().CALENDAR_WEB_ORIGINS.includes(new URL(url).origin);
+  } catch {
+    return false;
+  }
+};
 
 /**
  * Connecting and disconnecting calendar accounts. Mounted at /integrations.
- *   POST   /:provider/start     signed in; body { returnScheme? } → { url } (open in a browser)
+ *   POST   /:provider/start     signed in; body { returnScheme? } (apps) or { returnUrl } (web)
+ *                               → { url } (open in a browser)
  *   GET    /:provider/callback  from the provider → store the account, import its calendars,
- *                               redirect to <returnScheme>://integrations/done (or /error)
+ *                               redirect to <returnScheme>://integrations/done (or /error), or
+ *                               to returnUrl?calendar_connect=done (or =error)
  *   DELETE /accounts/:id        signed in → disconnect (queued)
  */
 export const integrationRoutes = new Hono<{ Variables: AuthVariables }>()
@@ -54,10 +69,14 @@ export const integrationRoutes = new Hono<{ Variables: AuthVariables }>()
     if (!isProviderId(provider)) return c.json({ error: 'Unknown provider' }, 404);
     const body = startBody.safeParse(await c.req.json().catch(() => ({})));
     if (!body.success) return c.json({ error: 'Bad request', issues: body.error.issues }, 400);
+    const { returnScheme, returnUrl } = body.data;
+    if (returnUrl && !allowedReturnUrl(returnUrl)) {
+      return c.json({ error: 'returnUrl is not an allowed web app origin' }, 400);
+    }
     const state = signState({
       userId: c.get('userId'),
       provider,
-      returnScheme: body.data.returnScheme,
+      ...(returnUrl ? { returnUrl } : { returnScheme: returnScheme ?? 'planner' }),
       features: ['read'],
     });
     try {
@@ -79,10 +98,18 @@ export const integrationRoutes = new Hono<{ Variables: AuthVariables }>()
     if (!state || state.provider !== provider || !isProviderId(provider)) {
       return c.text('This link has expired. Start connecting again from the app.', 400);
     }
-    const back = (path: 'done' | 'error', params: Record<string, string> = {}) =>
-      c.redirect(
-        `${state.returnScheme}://integrations/${path}?${new URLSearchParams({ provider, ...params })}`,
+    const back = (path: 'done' | 'error', params: Record<string, string> = {}) => {
+      if (state.returnUrl && allowedReturnUrl(state.returnUrl)) {
+        const url = new URL(state.returnUrl);
+        url.searchParams.set('calendar_connect', path);
+        url.searchParams.set('provider', provider);
+        for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+        return c.redirect(url.toString());
+      }
+      return c.redirect(
+        `${state.returnScheme ?? 'planner'}://integrations/${path}?${new URLSearchParams({ provider, ...params })}`,
       );
+    };
 
     const code = c.req.query('code');
     if (!code) return back('error', { reason: c.req.query('error') ?? 'no_code' });

@@ -195,6 +195,8 @@ const service = new gcp.cloudrunv2.Service(
             ...(calendarsOn
               ? [
                   { name: 'GOOGLE_CLIENT_ID', value: googleClientId ?? '' },
+                  // The web app may be returned to after connecting a calendar.
+                  { name: 'CALENDAR_WEB_ORIGINS', value: corsOrigins },
                   ...(liveUpdates
                     ? [
                         { name: 'CALENDAR_PUBLIC_URL', value: calendarPublicUrl! },
