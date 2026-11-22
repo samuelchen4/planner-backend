@@ -10,3 +10,8 @@ infra/bin
 .DS_Store
 
 .claude/settings.local.json
+
+# Planning notes and AI-agent instructions: local only, not on GitHub
+CLAUDE.md
+AGENTS.md
+/notes/
