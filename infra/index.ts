@@ -9,8 +9,19 @@ const stack = pulumi.getStack();
 
 const supabaseUrl = config.require('supabaseUrl');
 const imageTag = config.get('imageTag');
-const secretVersion = config.get('secretVersion') ?? 'latest';
+// Pinned secret versions per secret id (a new value needs a deploy to take effect). The older
+// single `secretVersion` setting still pins database-url.
+const secretVersions: Record<string, string> = {
+  'database-url': config.get('secretVersion') ?? 'latest',
+  ...config.getObject<Record<string, string>>('secretVersions'),
+};
 const corsOrigins = config.get('corsOrigins') ?? 'http://localhost:5173';
+
+// Calendar sync (src/calendars). Two steps so Cloud Run never points at an empty secret:
+// `pulumi up` creates the secrets, you add their values, then set `calendars: true` and `pulumi up`.
+const calendarsOn = config.getBoolean('calendars') ?? false;
+const googleClientId = config.get('googleClientId');
+const calendarPublicUrl = config.get('calendarPublicUrl');
 
 const name = (suffix: string) => `planner-${suffix}-${stack}`;
 
@@ -58,7 +69,11 @@ const runner = new gcp.serviceaccount.Account('api-runner', {
 const secretEnv: Record<string, string> = {
   DATABASE_URL: 'database-url',
   ...(config.getBoolean('legacyJwtSecret') && { SUPABASE_JWT_SECRET: 'supabase-jwt-secret' }),
+  GOOGLE_CLIENT_SECRET: 'google-client-secret',
+  // Must stay the same key forever per environment: it decrypts every stored calendar login.
+  CALENDAR_CREDENTIALS_KEY: 'calendar-credentials-key',
 };
+const calendarSecrets = new Set(['GOOGLE_CLIENT_SECRET', 'CALENDAR_CREDENTIALS_KEY']);
 
 const secrets = Object.fromEntries(
   Object.entries(secretEnv).map(([envName, id]) => {
@@ -90,15 +105,33 @@ const service = new gcp.cloudrunv2.Service(
         {
           image,
           ports: { containerPort: 8080 },
-          resources: { limits: { cpu: '1', memory: '512Mi' }, cpuIdle: true },
+          // Calendar jobs run in-process after the response until Cloud Tasks exists (plan step
+          // 6), so the CPU must stay on between requests (instance-based billing; still scales
+          // to zero when idle).
+          resources: { limits: { cpu: '1', memory: '512Mi' }, cpuIdle: !calendarsOn },
           startupProbe: { httpGet: { path: '/health' } },
           envs: [
             { name: 'SUPABASE_URL', value: supabaseUrl },
             { name: 'CORS_ORIGINS', value: corsOrigins },
-            ...Object.entries(secrets).map(([envName, secret]) => ({
-              name: envName,
-              valueSource: { secretKeyRef: { secret: secret.secretId, version: secretVersion } },
-            })),
+            ...(calendarsOn
+              ? [
+                  { name: 'GOOGLE_CLIENT_ID', value: googleClientId ?? '' },
+                  ...(calendarPublicUrl
+                    ? [{ name: 'CALENDAR_PUBLIC_URL', value: calendarPublicUrl }]
+                    : []),
+                ]
+              : []),
+            ...Object.entries(secrets)
+              .filter(([envName]) => calendarsOn || !calendarSecrets.has(envName))
+              .map(([envName, secret]) => ({
+                name: envName,
+                valueSource: {
+                  secretKeyRef: {
+                    secret: secret.secretId,
+                    version: secretVersions[secretEnv[envName]!] ?? 'latest',
+                  },
+                },
+              })),
           ],
         },
       ],

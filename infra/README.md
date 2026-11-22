@@ -33,6 +33,27 @@ pulumi config set imageTag <tag> && pulumi up
 
 Set `legacyJwtSecret: true` only if the Supabase project still signs tokens with HS256.
 
+## Calendar sync (Google)
+
+Two passes, so Cloud Run never points at a secret with no value:
+
+```bash
+pulumi up                                   # creates planner-google-client-secret, planner-calendar-credentials-key
+# Values from planner-backend/.env, piped (never echoed). CALENDAR_CREDENTIALS_KEY must be the
+# key that encrypted the logins already in the database, and must never change.
+(set -a; source ../.env; set +a
+ printf '%s' "$GOOGLE_CLIENT_SECRET"     | gcloud secrets versions add planner-google-client-secret --data-file=-
+ printf '%s' "$CALENDAR_CREDENTIALS_KEY" | gcloud secrets versions add planner-calendar-credentials-key --data-file=-
+ pulumi config set googleClientId "$GOOGLE_CLIENT_ID")
+pulumi config set calendarPublicUrl <apiUrl>
+pulumi config set calendars true
+pulumi up
+```
+
+Also add `<apiUrl>/integrations/google/callback` to the OAuth client's redirect URIs in Google
+Cloud Console. Until Cloud Tasks lands (plan step 6), calendar jobs run in-process, so
+`calendars: true` also turns off CPU throttling between requests (still scales to zero).
+
 ## Still to add
 - Workload Identity Federation + a deploy service account, so GitHub Actions can push and deploy.
 - Cloud Scheduler for the Google Calendar worker (watch-channel renewal).
