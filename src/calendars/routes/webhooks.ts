@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 
-import { eq } from 'drizzle-orm';
+import { inArray } from 'drizzle-orm';
 import { Hono } from 'hono';
 
 import { db } from '../../db/client';
@@ -40,17 +40,25 @@ export const webhookRoutes = new Hono().post('/:provider', async (c) => {
       return c.json({ error: 'Invalid webhook' }, 400);
   }
 
-  const [state] = await db
+  const ids = [...new Set(result.changes.map((n) => n.subscriptionId))];
+  const states = await db
     .select({
+      subscriptionId: calendarSyncState.subscription_id,
       calendarId: calendarSyncState.calendar_id,
       secret: calendarSyncState.subscription_secret,
     })
     .from(calendarSyncState)
-    .where(eq(calendarSyncState.subscription_id, result.subscriptionId));
-  // Unknown subscription or wrong secret: 200 anyway (no retries, nothing learned by the caller).
-  if (!state?.secret || !result.secret || !sameSecret(state.secret, result.secret)) {
-    return c.body(null, 200);
+    .where(inArray(calendarSyncState.subscription_id, ids));
+  const calendarsToSync = new Set<string>();
+  for (const n of result.changes) {
+    const state = states.find((s) => s.subscriptionId === n.subscriptionId);
+    // Unknown subscription or wrong secret: ignored (and not told apart to the caller).
+    if (state?.secret && n.secret && sameSecret(state.secret, n.secret)) {
+      calendarsToSync.add(state.calendarId);
+    }
   }
-  await enqueueCalendarJob({ type: 'sync-calendar', calendarId: state.calendarId });
-  return c.body(null, 202);
+  for (const calendarId of calendarsToSync) {
+    await enqueueCalendarJob({ type: 'sync-calendar', calendarId });
+  }
+  return c.body(null, calendarsToSync.size ? 202 : 200);
 });

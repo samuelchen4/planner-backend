@@ -8,7 +8,11 @@ const region = gcpConfig.require('region');
 const stack = pulumi.getStack();
 
 const supabaseUrl = config.require('supabaseUrl');
-const imageTag = config.get('imageTag');
+// The image to run: a tag in Artifact Registry (default `main`, the branch). Pulumi looks up the
+// digest that tag points to now and deploys that, so pushing a new `:main` image and running
+// `pulumi up` rolls it out (Cloud Run pins digests, so a moving tag alone wouldn't redeploy).
+// An exact tag (a commit sha) also works, for pinning or rolling back.
+const imageTag = config.get('imageTag') ?? 'main';
 // Pinned secret versions per secret id (a new value needs a deploy to take effect). The older
 // single `secretVersion` setting still pins database-url.
 const secretVersions: Record<string, string> = {
@@ -21,6 +25,9 @@ const corsOrigins = config.get('corsOrigins') ?? 'http://localhost:5173';
 // `pulumi up` creates the secrets, you add their values, then set `calendars: true` and `pulumi up`.
 const calendarsOn = config.getBoolean('calendars') ?? false;
 const googleClientId = config.get('googleClientId');
+// Outlook (Microsoft Graph). Same two passes as Google: `pulumi up` creates the secret, you add its
+// value, then set `microsoftClientId` and `pulumi up` again (only then does the API reference it).
+const microsoftClientId = config.get('microsoftClientId');
 const calendarPublicUrl = config.get('calendarPublicUrl');
 
 const name = (suffix: string) => `planner-${suffix}-${stack}`;
@@ -64,9 +71,14 @@ const registry = new gcp.artifactregistry.Repository(
 );
 
 const imageBase = pulumi.interpolate`${region}-docker.pkg.dev/${project}/${registry.repositoryId}/api`;
-const image = imageTag
-  ? pulumi.interpolate`${imageBase}:${imageTag}`
-  : pulumi.output('us-docker.pkg.dev/cloudrun/container/hello');
+const image = gcp.artifactregistry
+  .getDockerImageOutput({
+    location: region,
+    repositoryId: registry.repositoryId,
+    imageName: `api:${imageTag}`,
+  })
+  // selfLink is `<host>/<project>/<repo>/<image>@sha256:…`: deploy by digest.
+  .apply((img) => pulumi.interpolate`${imageBase}@${img.selfLink.split('@')[1]}`);
 
 const runner = new gcp.serviceaccount.Account('api-runner', {
   accountId: name('api'),
@@ -77,10 +89,20 @@ const secretEnv: Record<string, string> = {
   DATABASE_URL: 'database-url',
   ...(config.getBoolean('legacyJwtSecret') && { SUPABASE_JWT_SECRET: 'supabase-jwt-secret' }),
   GOOGLE_CLIENT_SECRET: 'google-client-secret',
+  MICROSOFT_CLIENT_SECRET: 'microsoft-client-secret',
   // Must stay the same key forever per environment: it decrypts every stored calendar login.
   CALENDAR_CREDENTIALS_KEY: 'calendar-credentials-key',
 };
-const calendarSecrets = new Set(['GOOGLE_CLIENT_SECRET', 'CALENDAR_CREDENTIALS_KEY']);
+const calendarSecrets = new Set([
+  'GOOGLE_CLIENT_SECRET',
+  'CALENDAR_CREDENTIALS_KEY',
+  'MICROSOFT_CLIENT_SECRET',
+]);
+/** Secrets the API only references once their provider is configured. */
+const secretEnabled = (envName: string) =>
+  envName === 'MICROSOFT_CLIENT_SECRET'
+    ? calendarsOn && !!microsoftClientId
+    : calendarsOn || !calendarSecrets.has(envName);
 
 const secrets = Object.fromEntries(
   Object.entries(secretEnv).map(([envName, id]) => {
@@ -162,9 +184,16 @@ if (liveUpdates) {
   schedule('calendar-poll', '*/20 * * * *', 'poll', 'Backup sync of every calendar');
   schedule(
     'calendar-renew',
-    '17 9 * * *',
+    // Every 12 hours: Graph subscriptions last about 3 days, Google's about a week.
+    '17 */12 * * *',
     'renew-subscriptions',
-    'Replace webhook subscriptions that expire within a day',
+    'Renew webhook subscriptions that expire within 36 hours',
+  );
+  schedule(
+    'calendar-rebaseline',
+    '41 3 * * 1',
+    'rebaseline',
+    'Move fixed sync windows (Outlook) forward',
   );
 }
 
@@ -195,6 +224,9 @@ const service = new gcp.cloudrunv2.Service(
             ...(calendarsOn
               ? [
                   { name: 'GOOGLE_CLIENT_ID', value: googleClientId ?? '' },
+                  ...(microsoftClientId
+                    ? [{ name: 'MICROSOFT_CLIENT_ID', value: microsoftClientId }]
+                    : []),
                   // The web app may be returned to after connecting a calendar.
                   { name: 'CALENDAR_WEB_ORIGINS', value: corsOrigins },
                   ...(liveUpdates
@@ -209,7 +241,7 @@ const service = new gcp.cloudrunv2.Service(
                 ]
               : []),
             ...Object.entries(secrets)
-              .filter(([envName]) => calendarsOn || !calendarSecrets.has(envName))
+              .filter(([envName]) => secretEnabled(envName))
               .map(([envName, secret]) => ({
                 name: envName,
                 valueSource: {

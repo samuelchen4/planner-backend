@@ -73,8 +73,11 @@ export interface Subscription {
 export type WebhookResult =
   /** Reply to a provider handshake (Graph validationToken) as-is. */
   | { kind: 'handshake'; body: string }
-  /** A change ping: the engine finds the calendar by subscription and checks the secret. */
-  | { kind: 'change'; subscriptionId: string; secret: string | null }
+  /**
+   * Change pings (Graph batches several per request): the engine finds each calendar by
+   * subscription and checks its secret.
+   */
+  | { kind: 'change'; changes: { subscriptionId: string; secret: string | null }[] }
   /** Nothing to do (e.g. Google's initial 'sync' ping). */
   | { kind: 'ignore' }
   | { kind: 'invalid' };

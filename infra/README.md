@@ -26,12 +26,18 @@ pulumi up                         # first run deploys Cloud Run's sample image
 printf '%s' '<postgres connection string>' | \
   gcloud secrets versions add planner-database-url --data-file=-
 
-# Build and push the API image, then point the service at it:
-docker build -t <region>-docker.pkg.dev/<project>/planner/api:<tag> .. && docker push ...
-pulumi config set imageTag <tag> && pulumi up
+# Build and push the API image (tags :main and :<commit>), then deploy whatever :main points to:
+(cd .. && pnpm image:push) && pulumi up
 ```
 
 Set `legacyJwtSecret: true` only if the Supabase project still signs tokens with HS256.
+
+## Deploying
+
+`imageTag` (default `main`) names a tag; `pulumi up` looks up the digest it points to and deploys
+that. So a deploy is `pnpm image:push` (from the repo root) then `pulumi up`. To pin or roll back,
+`pulumi config set imageTag <commit sha>` (every push also tags the commit); `pulumi config rm
+imageTag` returns to `main`.
 
 ## Calendar sync (Google)
 
@@ -58,6 +64,30 @@ With `calendars: true` and `calendarPublicUrl` set, live updates are on: a Cloud
 `renew-subscriptions` daily), and a `planner-jobs-<stack>` service account whose OIDC tokens the
 `/jobs/calendar/*` route requires. Without `calendarPublicUrl`, jobs run in-process and CPU
 throttling is turned off instead.
+
+## Outlook (Microsoft Graph)
+
+Same two passes as Google (an Azure app registration supplies the values; see the calendar plan):
+
+```bash
+pulumi up                                   # creates planner-microsoft-client-secret
+(set -a; source ../.env; set +a
+ printf '%s' "$MICROSOFT_CLIENT_SECRET" | gcloud secrets versions add planner-microsoft-client-secret --data-file=-
+ pulumi config set microsoftClientId "$MICROSOFT_CLIENT_ID")
+pulumi up
+```
+
+The renewal job runs every 12 hours (Graph subscriptions last about 3 days) and a weekly
+`rebaseline` job moves Outlook's fixed sync window forward.
+
+## Signing in for Pulumi
+
+Pulumi uses application-default credentials. If those are a different Google account (e.g. a
+work one), pass the personal account's token for this shell instead of switching globally:
+
+```bash
+export GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token --account <personal account>)
+```
 
 ## Still to add
 - Workload Identity Federation + a deploy service account, so GitHub Actions can push and deploy.

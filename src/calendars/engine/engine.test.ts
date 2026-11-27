@@ -19,7 +19,7 @@ import { connectAccount, disconnectAccount } from './accounts';
 import { syncCalendarList } from './calendar-list';
 import { drainCalendarJobs, setCalendarJobHandler, type CalendarJob } from './jobs';
 import { renewSubscriptions } from './subscriptions';
-import { calendarSelectionChanged, syncCalendar } from './sync';
+import { calendarSelectionChanged, rebaselineAll, syncCalendar } from './sync';
 
 // The provider-neutral engine against the fake provider and the local database: connecting,
 // calendar lists, full and incremental sync, switching calendars off, revoked logins, and the
@@ -231,6 +231,27 @@ describe('syncing', () => {
         ),
       );
     expect(row).toMatchObject({ name: 'Me', color: '#000000', is_selected: true });
+  });
+});
+
+describe('rebaselining windowed cursors', () => {
+  it('starts a fresh window for calendars whose window is running out, and only those', async () => {
+    const accountId = await connect();
+    const personal = await calendarId(accountId, 'me@gmail.com');
+
+    fake.calls = [];
+    await rebaselineAll(); // open-ended cursor (no window end): nothing to do
+    expect(fake.calls).toEqual([]);
+
+    await db
+      .update(calendarSyncState)
+      .set({
+        window_start: new Date(Date.now() - 60 * 86_400_000).toISOString(),
+        window_end: new Date(Date.now() + 300 * 86_400_000).toISOString(),
+      })
+      .where(eq(calendarSyncState.calendar_id, personal));
+    await rebaselineAll();
+    expect(fake.calls).toContain('syncEvents:me@gmail.com:null');
   });
 });
 

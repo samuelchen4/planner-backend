@@ -194,8 +194,7 @@ export class FakeProvider implements CalendarProvider {
     if (!subscriptionId) return { kind: 'invalid' as const };
     return {
       kind: 'change' as const,
-      subscriptionId,
-      secret: req.headers['x-fake-secret'] ?? null,
+      changes: [{ subscriptionId, secret: req.headers['x-fake-secret'] ?? null }],
     };
   }
 

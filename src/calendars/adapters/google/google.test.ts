@@ -228,7 +228,7 @@ describe('webhooks', () => {
         'x-goog-channel-token': 'sec',
         'x-goog-resource-state': 'exists',
       }),
-    ).toEqual({ kind: 'change', subscriptionId: 'ch', secret: 'sec' });
+    ).toEqual({ kind: 'change', changes: [{ subscriptionId: 'ch', secret: 'sec' }] });
     expect(parse({ 'x-goog-channel-id': 'ch', 'x-goog-resource-state': 'sync' })).toEqual({
       kind: 'ignore',
     });

@@ -5,7 +5,7 @@ import { disconnectAccount, disconnectAll } from './accounts';
 import { syncCalendarList } from './calendar-list';
 import { createTask } from './cloud-tasks';
 import { renewSubscriptions } from './subscriptions';
-import { calendarSelectionChanged, pollAll, syncCalendar } from './sync';
+import { calendarSelectionChanged, pollAll, rebaselineAll, syncCalendar } from './sync';
 
 // Every unit of calendar work is a job. The rest of the API only ever queues jobs (never calls
 // the engine), so the engine can move to its own service by pointing the queue elsewhere.
@@ -21,7 +21,7 @@ export const calendarJobSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('renew-subscriptions') }),
   /** Scheduled: incremental sync of every selected calendar (catches missed webhooks). */
   z.object({ type: z.literal('poll') }),
-  /** Scheduled: move date windows forward for providers that need them (Graph). */
+  /** Scheduled weekly: move date windows forward for providers that need them (Graph). */
   z.object({ type: z.literal('rebaseline') }),
   /** Unsubscribe, revoke and delete one account. */
   z.object({ type: z.literal('disconnect-account'), accountId: z.uuid() }),
@@ -51,7 +51,7 @@ const handlers: Handlers = {
   'calendar-selection-changed': (job) => calendarSelectionChanged(job.calendarId),
   'renew-subscriptions': () => renewSubscriptions(),
   poll: () => pollAll(),
-  rebaseline: notYet('step 8 (Outlook)'),
+  rebaseline: () => rebaselineAll(),
   'disconnect-account': (job) => disconnectAccount(job.accountId),
   'disconnect-all': (job) => disconnectAll(job.userId),
   'push-task': notYet('phase 2'),

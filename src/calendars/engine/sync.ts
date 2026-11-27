@@ -1,4 +1,4 @@
-import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, lt, notInArray, sql } from 'drizzle-orm';
 
 import { db, type Tx } from '../../db/client';
 import { calendarAccounts, calendars, calendarSyncState, externalEvents } from '../../db/schema';
@@ -250,5 +250,38 @@ export async function pollAll() {
     );
   for (const { id } of rows) {
     await enqueueCalendarJob({ type: 'sync-calendar', calendarId: id });
+  }
+}
+
+/** A windowed cursor is moved forward once its window has less than this left ahead. */
+const REBASELINE_DAYS_LEFT = 335;
+
+/**
+ * Scheduled weekly: providers whose sync covers a fixed date window (Graph) need it moved forward,
+ * or new events past its end never arrive. A full sync starts a new window from today (and drops
+ * events that fell out of it). Open-ended cursors (Google) have no window end and are skipped.
+ */
+export async function rebaselineAll() {
+  const rows = await db
+    .select({ id: calendars.id })
+    .from(calendars)
+    .innerJoin(calendarAccounts, eq(calendarAccounts.id, calendars.account_id))
+    .innerJoin(calendarSyncState, eq(calendarSyncState.calendar_id, calendars.id))
+    .where(
+      and(
+        eq(calendars.is_selected, true),
+        eq(calendars.is_planner_calendar, false),
+        eq(calendarAccounts.status, 'active'),
+        isNotNull(calendarSyncState.window_end),
+        lt(
+          calendarSyncState.window_end,
+          sql`now() + make_interval(days => ${REBASELINE_DAYS_LEFT})`,
+        ),
+      ),
+    );
+  for (const { id } of rows) {
+    await syncCalendar(id, { full: true }).catch((e) =>
+      console.error(`[calendars] rebaseline of ${id} failed`, e),
+    );
   }
 }

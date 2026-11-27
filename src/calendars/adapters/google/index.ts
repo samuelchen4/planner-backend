@@ -81,7 +81,10 @@ function parseWebhook(req: WebhookRequest): WebhookResult {
   const state = req.headers['x-goog-resource-state'];
   if (!subscriptionId || !state) return { kind: 'invalid' };
   if (state === 'sync') return { kind: 'ignore' }; // sent once when a channel is created
-  return { kind: 'change', subscriptionId, secret: req.headers['x-goog-channel-token'] ?? null };
+  return {
+    kind: 'change',
+    changes: [{ subscriptionId, secret: req.headers['x-goog-channel-token'] ?? null }],
+  };
 }
 
 export const google: CalendarProvider = {

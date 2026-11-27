@@ -1,8 +1,11 @@
+import { sql } from 'drizzle-orm';
 import {
   boolean,
+  check,
   doublePrecision,
   index,
   pgTable,
+  smallint,
   text,
   uuid,
   type AnyPgColumn,
@@ -13,6 +16,7 @@ import { day, oneOf, ownerId, ownRows, timestamptz } from './columns';
 export const TASK_TYPES = ['task', 'time_block', 'list', 'habit'] as const;
 export const TASK_STATUSES = ['open', 'done', 'cancelled'] as const;
 export const TASK_COLORS = ['yellow', 'pink', 'blue', 'orange', 'lavender'] as const;
+export const MAX_PRIORITY = 3;
 
 export const tasks = pgTable(
   'tasks',
@@ -31,6 +35,8 @@ export const tasks = pgTable(
 
     status: text({ enum: TASK_STATUSES }).notNull().default('open'),
     completed_at: timestamptz(),
+    /** 0 = none, 1–3 = !, !!, !!! (3 is the highest). */
+    priority: smallint().notNull().default(0),
 
     list_id: uuid().references((): AnyPgColumn => tasks.id, { onDelete: 'cascade' }),
     color: text({ enum: TASK_COLORS }),
@@ -49,6 +55,10 @@ export const tasks = pgTable(
     oneOf('tasks_type_check', t.type, TASK_TYPES),
     oneOf('tasks_status_check', t.status, TASK_STATUSES),
     oneOf('tasks_color_check', t.color, TASK_COLORS),
+    check(
+      'tasks_priority_check',
+      sql`${t.priority} between 0 and ${sql.raw(String(MAX_PRIORITY))}`,
+    ),
   ],
 );
 

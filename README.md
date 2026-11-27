@@ -104,6 +104,12 @@ first with two-way scaffolded, detachable into its own service). Built so far:
   (every 20 min, fans out one sync per calendar) and `renew-subscriptions` (daily: anything
   without a subscription or expiring within a day). Locally the queue is inline and nothing
   subscribes (no public HTTPS URL).
+- **Step 8 (Outlook)**: `adapters/microsoft/` (Graph): sign-in on the common endpoint
+  (personal and work accounts; the rotated refresh token is saved on every refresh), calendars,
+  `calendarView/delta` over a fixed window (30 days back to a year ahead; the weekly `rebaseline`
+  job moves it forward), Windows → IANA zone names, subscriptions extended in place (about 3 days;
+  renewal runs every 12 hours, 36 hours ahead), the validationToken handshake and batched
+  notifications.
 - **Detachable**: the rest of the API imports only `src/calendars/index.ts` and only queues jobs;
   the module imports only `db/`, `auth` and `lib/` (ESLint enforces both). `SERVICE_ROLE` =
   `all` (default) | `api` (no calendar routes) | `sync` (only calendar routes + `/health`).

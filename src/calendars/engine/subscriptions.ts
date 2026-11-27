@@ -10,11 +10,11 @@ import { providerFor } from '../registry';
 import { withAccess } from './accounts';
 
 // Live updates: a provider subscription ("watch") per selected calendar, so the provider pings
-// /webhooks/<provider> when something changes. Subscriptions expire (Google: about a week), so a
-// daily job replaces any expiring within RENEW_AHEAD_HOURS. Calendars that can't be watched (some
+// /webhooks/<provider> when something changes. Subscriptions expire (Google: about a week, Graph:
+// about 3 days), so a job every 12 hours renews any expiring within RENEW_AHEAD_HOURS. Calendars that can't be watched (some
 // Google calendars, e.g. public holidays) still get the scheduled poll.
 
-const RENEW_AHEAD_HOURS = 24;
+const RENEW_AHEAD_HOURS = 36;
 
 /** Where providers send pings; null when this service has no public HTTPS address (local dev). */
 export function webhookUrl(provider: string): string | null {
@@ -126,7 +126,7 @@ export async function unsubscribeCalendar(calendarId: string) {
 }
 
 /**
- * Scheduled daily: subscribe every selected calendar that has no subscription or one expiring
+ * Scheduled every 12 hours: subscribe every selected calendar that has no subscription or one expiring
  * within RENEW_AHEAD_HOURS. Also picks up calendars whose subscribing failed earlier.
  */
 export async function renewSubscriptions() {
