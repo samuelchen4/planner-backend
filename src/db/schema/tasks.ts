@@ -7,6 +7,7 @@ import {
   pgTable,
   smallint,
   text,
+  uniqueIndex,
   uuid,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
@@ -31,7 +32,14 @@ export const tasks = pgTable(
     end_at: timestamptz(),
     time_zone: text(),
     all_day_date: day(),
+    /** A recurring series: its repeat rule (RFC 5545 RRULE); its date and time are the first day's. */
     rrule: text(),
+    /**
+     * One day of a series that was changed (checked off, moved, deleted = cancelled): the series and
+     * the day it belongs to. Unchanged days aren't stored; clients work them out from the rule.
+     */
+    series_id: uuid().references((): AnyPgColumn => tasks.id, { onDelete: 'cascade' }),
+    occurrence_date: day(),
 
     status: text({ enum: TASK_STATUSES }).notNull().default('open'),
     completed_at: timestamptz(),
@@ -51,6 +59,8 @@ export const tasks = pgTable(
   (t) => [
     index('tasks_user_idx').on(t.user_id),
     index('tasks_list_idx').on(t.list_id),
+    uniqueIndex('tasks_series_occurrence_idx').on(t.series_id, t.occurrence_date),
+    check('tasks_occurrence_check', sql`(${t.series_id} is null) = (${t.occurrence_date} is null)`),
     ownRows('tasks', t.user_id),
     oneOf('tasks_type_check', t.type, TASK_TYPES),
     oneOf('tasks_status_check', t.status, TASK_STATUSES),

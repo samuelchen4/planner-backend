@@ -18,7 +18,7 @@ type WritableName = keyof typeof WRITABLE;
  * one on or off (PATCH is_selected), which queues a job; it never calls the module directly.
  */
 const RULES: Record<WritableName, { ops: Change['op'][]; ownedReferences: string[] }> = {
-  tasks: { ops: ['PUT', 'PATCH', 'DELETE'], ownedReferences: ['list_id'] },
+  tasks: { ops: ['PUT', 'PATCH', 'DELETE'], ownedReferences: ['list_id', 'series_id'] },
   habit_days: { ops: ['PUT', 'PATCH', 'DELETE'], ownedReferences: ['habit_id'] },
   calendars: { ops: ['PATCH'], ownedReferences: [] },
 };
