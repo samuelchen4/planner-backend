@@ -2,9 +2,9 @@ config:
   gcp:project: planner-514904
   gcp:region: us-east4
   planner-backend:supabaseUrl: https://dfdwcpcwdxpuikjtmxci.supabase.co
-  planner-backend:imageTag: d77d379
   planner-backend:secretVersion: "2"
   planner-backend:corsOrigins: https://planner-web-dev-qwgcby2x5a-uk.a.run.app,http://localhost:5173
   planner-backend:googleClientId: 64776575094-7qinfqd7ovj3aasccn8heifcs27je5fs.apps.googleusercontent.com
   planner-backend:calendarPublicUrl: https://planner-api-dev-qwgcby2x5a-uk.a.run.app
   planner-backend:calendars: "true"
+  planner-backend:microsoftClientId: 1b66de5b-951c-4606-ab34-6b6d359146c3
